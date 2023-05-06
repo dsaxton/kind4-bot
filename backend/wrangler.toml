@@ -1,0 +1,7 @@
+name = "kind4-backend"
+main = "src/index.ts"
+compatibility_date = "2023-05-05"
+
+kv_namespaces = [
+  { binding = "KIND4_ARCHIVE", id = "461947cac8994baf96ab028a216687ff", preview_id = "7dc58a4f52f84084a305a3ced1f01bde" }
+]
