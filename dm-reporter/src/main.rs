@@ -49,6 +49,10 @@ async fn main() -> anyhow::Result<()> {
     client.add_relay("wss://nostr.zebedee.cloud", None).await?;
     client.add_relay("wss://relay.damus.io", None).await?;
     client.add_relay("wss://relay.nostr.band", None).await?;
+    client.add_relay("wss://bitcoiner.social", None).await?;
+    client
+        .add_relay("wss://universe.nostrich.land", None)
+        .await?;
     client
         .add_relay("wss://nostr-pub.wellorder.net", None)
         .await?;
@@ -102,10 +106,30 @@ async fn main() -> anyhow::Result<()> {
                 info!("{}", bot_content);
                 client.publish_text_note(bot_content, &[]).await?;
 
-                info!("Storing note in backend...");
                 let http_client = reqwest::Client::new();
                 match http_client.put(API_URL).body(json_event).send().await {
                     Ok(_) => info!("Successfully stored event."),
+                    Err(err) => error!("{}", err),
+                }
+
+                info!("Getting counts...");
+                match http_client
+                    .get(format!("{}counts?sender={}", API_URL, sender_npub))
+                    .send()
+                    .await
+                {
+                    Ok(response) => match response
+                        .json::<std::collections::HashMap<String, u32>>()
+                        .await
+                    {
+                        Ok(counts) => {
+                            info!("Displaying receiver counts for {}", sender_npub);
+                            for (key, value) in counts.iter() {
+                                info!("npub: {}, count: {}", key, value)
+                            }
+                        }
+                        Err(err) => error!("{}", err),
+                    },
                     Err(err) => error!("{}", err),
                 }
             }
