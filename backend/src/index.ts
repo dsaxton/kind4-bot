@@ -45,7 +45,7 @@ export default {
           }),
           {
             status: 400,
-          },
+          }
         );
       }
       const prefix = `${sender}:${receiver}`;
@@ -63,7 +63,7 @@ export default {
       if (!validateEvent(event)) {
         return new Response(
           JSON.stringify({ error: "Body is not a valid nostr event" }),
-          { status: 400 },
+          { status: 400 }
         );
       }
       if (event.kind !== 4) {
@@ -86,12 +86,12 @@ export default {
           JSON.stringify({ error: "Unable to npub encode sender or receiver" }),
           {
             status: 400,
-          },
+          }
         );
       }
       await env.KIND4_ARCHIVE.put(
         `${sender}:${receiver}:${created_at}`,
-        JSON.stringify(event),
+        JSON.stringify(event)
       );
       return new Response(null, { status: 200 });
     }
