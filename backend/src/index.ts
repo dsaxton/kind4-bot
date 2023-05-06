@@ -6,6 +6,7 @@ export interface Env {
 
 type ParsedRequest = {
   method: string;
+  path: string;
   params: URLSearchParams;
   body: any;
 };
@@ -14,14 +15,14 @@ async function parseRequest(request: Request): Promise<ParsedRequest> {
   const method = request.method;
   const url = new URL(request.url);
   const params = new URLSearchParams(url.searchParams);
+  const path = url.pathname;
   let body;
   try {
     body = await request.json();
   } catch (err) {
-    console.log(err);
     body = {};
   }
-  return { method, params, body };
+  return { method, path, params, body };
 }
 
 export default {
@@ -35,28 +36,6 @@ export default {
       });
     }
 
-    if (parsed.method === "GET") {
-      const sender = parsed.params.get("sender");
-      const receiver = parsed.params.get("receiver");
-      if (!sender || !receiver) {
-        return new Response(
-          JSON.stringify({
-            error: "Both sender and receiver must be provided",
-          }),
-          {
-            status: 400,
-          }
-        );
-      }
-      const prefix = `${sender}:${receiver}`;
-      const list_result = await env.KIND4_ARCHIVE.list({ prefix });
-      let keys = [];
-      for (const key of list_result.keys) {
-        keys.push(key.name);
-      }
-      return new Response(JSON.stringify(keys), { status: 200 });
-    }
-
     if (parsed.method === "PUT") {
       const parsed = await parseRequest(request);
       let event: Event = parsed.body;
@@ -67,7 +46,10 @@ export default {
         );
       }
       if (event.kind !== 4) {
-        return new Response("Event is not kind 4", { status: 400 });
+        return new Response(
+          JSON.stringify({ error: "Event is not a kind 4" }),
+          { status: 400 }
+        );
       }
       const created_at = event.created_at;
       let sender = event.pubkey;
@@ -94,6 +76,39 @@ export default {
         JSON.stringify(event)
       );
       return new Response(null, { status: 200 });
+    }
+
+    if (parsed.method === "GET") {
+      if (parsed.path === "/counts") {
+        const sender = parsed.params.get("sender");
+        const receiver = parsed.params.get("receiver");
+        const since = parsed.params.get("since");
+        if (!sender) {
+          return new Response(
+            JSON.stringify({ error: "Must specify a sender" }),
+            { status: 400 }
+          );
+        }
+        const list_result = await env.KIND4_ARCHIVE.list({ prefix: sender });
+        let keys = list_result.keys.map((key) => key.name);
+        if (receiver) {
+          keys = keys.filter((key) => key.split(":")[1] === receiver);
+        }
+        if (since) {
+          keys = keys.filter(
+            (key) => parseInt(key.split(":")[2]) >= parseInt(since)
+          );
+        }
+        let counts: any = {};
+        for (const key of keys) {
+          const receiver = key.split(":")[1];
+          counts[receiver] = (counts[receiver] || 0) + 1;
+        }
+        return new Response(JSON.stringify(counts), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "Invalid route" }), {
+        status: 400,
+      });
     }
 
     return new Response(null, { status: 405 });
