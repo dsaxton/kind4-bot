@@ -7,6 +7,7 @@ use nostr_sdk::relay::pool::RelayPoolNotification::Event;
 use nostr_sdk::Client;
 use std::io::Write;
 use std::str::FromStr;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const API_URL: &str = "https://kind4-backend.denseresidual5921.workers.dev/";
 const PROFILE_IMAGE_URL: &str = "https://nostr.build/i/nostr.build_acd58b907f3b9af0adaf0b0c615ead34cdee0d3c6aa86492f48acd014006d939.jpg";
@@ -95,26 +96,18 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
 
-                let bot_content = format!(
-                    "Sender: nostr:{}\nReceiver: nostr:{}\nContent length: {}\nSent at: {}",
-                    sender_npub,
-                    receiver_npub,
-                    content.len(),
-                    datetime
-                );
-                info!("Publishing note...");
-                info!("{}", bot_content);
-                client.publish_text_note(bot_content, &[]).await?;
-
                 let http_client = reqwest::Client::new();
                 match http_client.put(API_URL).body(json_event).send().await {
                     Ok(_) => info!("Successfully stored event."),
                     Err(err) => error!("{}", err),
                 }
 
-                info!("Getting counts...");
-                match http_client
-                    .get(format!("{}counts?sender={}", API_URL, sender_npub))
+                let current_unix_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).expect("Could not get UNIX timestamp").as_secs();
+                let one_week_ago = current_unix_timestamp - 7 * 24 * 60 * 60;
+
+                info!("Getting counts since UNIX timestamp {}...", one_week_ago);
+                let counts = match http_client
+                    .get(format!("{}counts?sender={}&since={}", API_URL, sender_npub, one_week_ago))
                     .send()
                     .await
                 {
@@ -122,16 +115,43 @@ async fn main() -> anyhow::Result<()> {
                         .json::<std::collections::HashMap<String, u32>>()
                         .await
                     {
-                        Ok(counts) => {
-                            info!("Displaying receiver counts for {}", sender_npub);
-                            for (key, value) in counts.iter() {
-                                info!("npub: {}, count: {}", key, value)
-                            }
+                        Ok(map) => map,
+                        Err(err) => {
+                            error!("{}", err);
+                            std::collections::HashMap::new()
                         }
-                        Err(err) => error!("{}", err),
                     },
-                    Err(err) => error!("{}", err),
+                    Err(err) => {
+                        error!("{}", err);
+                        std::collections::HashMap::new()
+                    }
+                };
+
+                info!("Displaying receiver counts for {}...", sender_npub);
+                for (key, value) in counts.iter() {
+                    info!("npub: {}, count: {}", key, value)
                 }
+
+                let count = counts.get(&receiver_npub).unwrap_or(&0);
+                let time_string = if *count ==  1_u32 {
+                    "time"
+                } else {
+                    "times"
+                };
+                let bot_content = format!(
+                    "Sender: nostr:{}\nReceiver: nostr:{}\nContent length: {}\nSent at: {}\n\nI've seen nostr:{} message nostr:{} {} {} in the past week.",
+                    sender_npub,
+                    receiver_npub,
+                    content.len(),
+                    datetime,
+                    sender_npub,
+                    receiver_npub,
+                    count,
+                    time_string,
+                );
+                info!("Publishing note...");
+                info!("{}", bot_content);
+                client.publish_text_note(bot_content, &[]).await?;
             }
             Ok(())
         })
