@@ -1,4 +1,4 @@
-import { nip19, validateEvent, Event } from "nostr-tools"
+import { Event, nip19, validateEvent } from "nostr-tools";
 
 export interface Env {
   KIND4_ARCHIVE: KVNamespace;
@@ -18,7 +18,7 @@ async function parseRequest(request: Request): Promise<ParsedRequest> {
   try {
     body = await request.json();
   } catch (err) {
-    console.log(err)
+    console.log(err);
     body = {};
   }
   return { method, params, body };
@@ -31,15 +31,40 @@ export default {
     if (parsed.method === "OPTIONS") {
       return new Response(null, {
         status: 200,
-        headers: { allow: "OPTIONS, PUT" },
+        headers: { allow: "OPTIONS, GET, PUT" },
       });
+    }
+
+    if (parsed.method === "GET") {
+      const sender = parsed.params.get("sender");
+      const receiver = parsed.params.get("receiver");
+      if (!sender || !receiver) {
+        return new Response(
+          JSON.stringify({
+            error: "Both sender and receiver must be provided",
+          }),
+          {
+            status: 400,
+          },
+        );
+      }
+      const prefix = `${sender}:${receiver}`;
+      const list_result = await env.KIND4_ARCHIVE.list({ prefix });
+      let keys = [];
+      for (const key of list_result.keys) {
+        keys.push(key.name);
+      }
+      return new Response(JSON.stringify(keys), { status: 200 });
     }
 
     if (parsed.method === "PUT") {
       const parsed = await parseRequest(request);
       let event: Event = parsed.body;
       if (!validateEvent(event)) {
-        return new Response("Body is not a valid nostr event", { status: 400 });
+        return new Response(
+          JSON.stringify({ error: "Body is not a valid nostr event" }),
+          { status: 400 },
+        );
       }
       if (event.kind !== 4) {
         return new Response("Event is not kind 4", { status: 400 });
@@ -49,17 +74,25 @@ export default {
       let receiver = "";
       for (const tag of event.tags) {
         if (tag[0] === "p") {
-          receiver = tag[1]
-          break
+          receiver = tag[1];
+          break;
         }
       }
       try {
         sender = nip19.npubEncode(sender);
         receiver = nip19.npubEncode(receiver);
       } catch {
-        return new Response("Unable to npub encode sender or receiver", { status: 400 });
+        return new Response(
+          JSON.stringify({ error: "Unable to npub encode sender or receiver" }),
+          {
+            status: 400,
+          },
+        );
       }
-      await env.KIND4_ARCHIVE.put(`${sender}:${receiver}:${created_at}`, JSON.stringify(event));
+      await env.KIND4_ARCHIVE.put(
+        `${sender}:${receiver}:${created_at}`,
+        JSON.stringify(event),
+      );
       return new Response(null, { status: 200 });
     }
 
