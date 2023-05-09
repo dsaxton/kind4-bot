@@ -37,7 +37,6 @@ export default {
     }
 
     if (parsed.method === "PUT") {
-      const parsed = await parseRequest(request);
       let event: Event = parsed.body;
       if (!validateEvent(event)) {
         return new Response(
