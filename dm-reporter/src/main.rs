@@ -1,5 +1,5 @@
 use chrono::{Local, NaiveDateTime};
-use log::{error, info, LevelFilter};
+use log::{debug, error, info, LevelFilter};
 use nostr::prelude::ToBech32;
 use nostr::{EventBuilder, Filter, Keys, Kind, Metadata, Tag, Timestamp, Url};
 use nostr_sdk::bitcoin::secp256k1::SecretKey;
@@ -59,7 +59,6 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     loop {
-        info!("Connecting to relays...");
         client.connect().await;
 
         let metadata = Metadata::new()
@@ -78,39 +77,46 @@ async fn main() -> anyhow::Result<()> {
                 if let Event(relay_url, event) = notification {
                     let json_event = event.clone().as_json();
                     info!("Received event from relay {}", relay_url);
-                    info!("{}", json_event.clone());
                     let sender_npub = event.pubkey.to_bech32().unwrap();
-                    let datetime =
-                        match NaiveDateTime::from_timestamp_micros(event.created_at.as_i64() * 1000000)
-                        {
-                            Some(datetime) => datetime.to_string(),
-                            None => {
-                                error!("Could not parse timestamp as datetime");
-                                "".to_string()
-                            }
-                        };
-                    let tags = event.tags;
-                    let content = event.content;
-                    let mut receiver_npub = "".to_string();
-                    for tag in tags {
+                    let datetime = match NaiveDateTime::from_timestamp_micros(
+                        event.created_at.as_i64() * 1000000,
+                    ) {
+                        Some(datetime) => datetime.to_string(),
+                        None => {
+                            error!("Could not parse timestamp as datetime");
+                            "".to_string()
+                        }
+                    };
+
+                    for tag in event.tags.iter() {
                         if let Tag::PubKey(pubkey, _) = tag {
-                            receiver_npub = pubkey.to_bech32().unwrap();
+                            debug!("Recipient {}", pubkey.to_bech32().unwrap_or("".to_owned()));
+                            if pubkey == &keys.public_key() {
+                                debug!("You have mail!");
+                            }
                             break;
                         }
                     }
 
+                    info!("Posting to API endpoint...");
                     let http_client = reqwest::Client::new();
                     match http_client.put(API_URL).body(json_event).send().await {
                         Ok(_) => info!("Successfully stored event."),
                         Err(err) => error!("{}", err),
                     }
 
-                    let current_unix_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).expect("Could not get UNIX timestamp").as_secs();
+                    let current_unix_timestamp = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("Could not get UNIX timestamp")
+                        .as_secs();
                     let one_week_ago = current_unix_timestamp - 7 * 24 * 60 * 60;
 
                     info!("Getting counts since UNIX timestamp {}...", one_week_ago);
                     let counts = match http_client
-                        .get(format!("{}counts?sender={}&since={}", API_URL, sender_npub, one_week_ago))
+                        .get(format!(
+                            "{}counts?sender={}&since={}",
+                            API_URL, sender_npub, one_week_ago
+                        ))
                         .send()
                         .await
                     {
@@ -130,31 +136,14 @@ async fn main() -> anyhow::Result<()> {
                         }
                     };
 
-                    info!("Displaying receiver counts for {}...", sender_npub);
-                    for (key, value) in counts.iter() {
-                        info!("nostr:{}, count: {}", key, value)
-                    }
-
-                    let count = counts.get(&receiver_npub).unwrap_or(&0);
-                    let time_string = if *count ==  1_u32 {
-                        "time"
-                    } else {
-                        "times"
-                    };
-                    let bot_content = format!(
-                        "Sender: nostr:{}\nReceiver: nostr:{}\nContent length: {}\nSent at: {}\n\nI've seen nostr:{} message nostr:{} {} {} in the past week.",
-                        sender_npub,
-                        receiver_npub,
-                        content.len(),
-                        datetime,
-                        sender_npub,
-                        receiver_npub,
-                        count,
-                        time_string,
+                    let mut message = format!(
+                        "nostr:{} has messaged the following users since {}:\n",
+                        sender_npub, datetime
                     );
-                    info!("Publishing note...");
-                    info!("{}", bot_content);
-                    client.publish_text_note(bot_content, &[]).await?;
+                    for (key, value) in counts.iter() {
+                        message = format!("{}\n{} {} time(s)", message, key, value);
+                        info!("{}", message);
+                    }
                 }
                 Ok(())
             })
