@@ -106,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
                         .unwrap()
                         .to_string();
 
-                    if current_unix_timestamp % 5 == 0 {
+                    if current_unix_timestamp % 20 == 0 {
                         info!("Getting counts since {}...", one_week_ago_datetime);
                         let counts = http_client
                             .get(format!(
