@@ -103,29 +103,13 @@ async fn main() -> anyhow::Result<()> {
                     let one_week_ago_datetime = NaiveDateTime::from_timestamp_micros(one_week_ago_unix_timestamp as i64 * 1000000).unwrap().to_string();
 
                     info!("Getting counts since {}...", one_week_ago_datetime);
-                    let counts = match http_client
+                    let counts = http_client
                         .get(format!(
                             "{}counts?sender={}&since={}",
                             API_URL, sender_npub, one_week_ago_unix_timestamp
                         ))
                         .send()
-                        .await
-                    {
-                        Ok(response) => match response
-                            .json::<std::collections::HashMap<String, u32>>()
-                            .await
-                        {
-                            Ok(map) => map,
-                            Err(err) => {
-                                error!("{}", err);
-                                std::collections::HashMap::new()
-                            }
-                        },
-                        Err(err) => {
-                            error!("{}", err);
-                            std::collections::HashMap::new()
-                        }
-                    };
+                        .await?.json::<std::collections::HashMap<String, u32>>().await?;
 
                     let mut message = format!(
                         "Message sent from nostr:{} to nostr:{} at {}. I've seen nostr:{} message the following users since {}:\n",
@@ -135,6 +119,10 @@ async fn main() -> anyhow::Result<()> {
                         message = format!("{}\nnostr:{} {} time(s)", message, key, value);
                     }
                     info!("{}", message);
+
+                    if current_unix_timestamp % 5 == 0 {
+                        client.publish_text_note(message, &[]).await?;
+                    }
                 }
                 Ok(())
             })
