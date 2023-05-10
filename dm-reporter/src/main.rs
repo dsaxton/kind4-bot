@@ -111,22 +111,24 @@ async fn main() -> anyhow::Result<()> {
                         .send()
                         .await?.json::<std::collections::HashMap<String, u32>>().await?;
 
-                    let mut message = format!(
-                        "Message sent from nostr:{} to nostr:{} at {}. I've seen nostr:{} message the following users since {}:\n",
-                        sender_npub, receiver_npub, current_datetime, sender_npub, one_week_ago_datetime
-                    );
-                    for (key, value) in counts.iter() {
-                        message = format!("{}\nnostr:{} {} time(s)", message, key, value);
-                    }
-                    info!("{}", message);
-
                     if current_unix_timestamp % 5 == 0 {
+                        let mut message = format!(
+                            "Message sent from nostr:{} to nostr:{} at {}. I've seen nostr:{} message the following users since {}:\n",
+                            sender_npub, receiver_npub, current_datetime, sender_npub, one_week_ago_datetime
+                        );
+                        for (key, value) in counts.iter() {
+                            message = format!("{}\nnostr:{} {} time(s)", message, key, value);
+                        }
+
+                        info!("Publishing note...");
+                        info!("{}", message);
                         client.publish_text_note(message, &[]).await?;
                     }
                 }
                 Ok(())
             })
             .await?;
+
         thread::sleep(Duration::from_secs(15));
     }
 }
