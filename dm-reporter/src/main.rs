@@ -96,22 +96,28 @@ async fn main() -> anyhow::Result<()> {
 
                     let current_unix_timestamp = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
-                        .expect("Could not get UNIX timestamp")
+                        .unwrap()
                         .as_secs();
-                    let current_datetime = NaiveDateTime::from_timestamp_micros(current_unix_timestamp as i64 *  1000000).unwrap().to_string();
+                    let current_datetime = NaiveDateTime::from_timestamp_micros(current_unix_timestamp as i64 *  1000000)
+                        .unwrap()
+                        .to_string();
                     let one_week_ago_unix_timestamp = current_unix_timestamp - 7 * 24 * 60 * 60;
-                    let one_week_ago_datetime = NaiveDateTime::from_timestamp_micros(one_week_ago_unix_timestamp as i64 * 1000000).unwrap().to_string();
-
-                    info!("Getting counts since {}...", one_week_ago_datetime);
-                    let counts = http_client
-                        .get(format!(
-                            "{}counts?sender={}&since={}",
-                            API_URL, sender_npub, one_week_ago_unix_timestamp
-                        ))
-                        .send()
-                        .await?.json::<std::collections::HashMap<String, u32>>().await?;
+                    let one_week_ago_datetime = NaiveDateTime::from_timestamp_micros(one_week_ago_unix_timestamp as i64 * 1000000)
+                        .unwrap()
+                        .to_string();
 
                     if current_unix_timestamp % 5 == 0 {
+                        info!("Getting counts since {}...", one_week_ago_datetime);
+                        let counts = http_client
+                            .get(format!(
+                                "{}counts?sender={}&since={}",
+                                API_URL, sender_npub, one_week_ago_unix_timestamp
+                            ))
+                            .send()
+                            .await?
+                            .json::<std::collections::HashMap<String, u32>>()
+                            .await?;
+
                         let mut message = format!(
                             "Message sent from nostr:{} to nostr:{} at {}. I've seen nostr:{} message the following users since {}:\n",
                             sender_npub, receiver_npub, current_datetime, sender_npub, one_week_ago_datetime
