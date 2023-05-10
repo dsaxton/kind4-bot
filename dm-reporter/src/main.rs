@@ -1,5 +1,5 @@
 use chrono::{Local, NaiveDateTime};
-use log::{debug, error, info, LevelFilter};
+use log::{error, info, LevelFilter};
 use nostr::prelude::ToBech32;
 use nostr::{EventBuilder, Filter, Keys, Kind, Metadata, Tag, Timestamp, Url};
 use nostr_sdk::bitcoin::secp256k1::SecretKey;
@@ -78,25 +78,6 @@ async fn main() -> anyhow::Result<()> {
                     let json_event = event.clone().as_json();
                     info!("Received event from relay {}", relay_url);
                     let sender_npub = event.pubkey.to_bech32().unwrap();
-                    let datetime = match NaiveDateTime::from_timestamp_micros(
-                        event.created_at.as_i64() * 1000000,
-                    ) {
-                        Some(datetime) => datetime.to_string(),
-                        None => {
-                            error!("Could not parse timestamp as datetime");
-                            "".to_string()
-                        }
-                    };
-
-                    for tag in event.tags.iter() {
-                        if let Tag::PubKey(pubkey, _) = tag {
-                            debug!("Recipient {}", pubkey.to_bech32().unwrap_or("".to_owned()));
-                            if pubkey == &keys.public_key() {
-                                debug!("You have mail!");
-                            }
-                            break;
-                        }
-                    }
 
                     info!("Posting to API endpoint...");
                     let http_client = reqwest::Client::new();
@@ -105,17 +86,27 @@ async fn main() -> anyhow::Result<()> {
                         Err(err) => error!("{}", err),
                     }
 
+                    let mut receiver_npub = "".to_string();
+                    for tag in event.tags.iter() {
+                        if let Tag::PubKey(pubkey, _) = tag {
+                            receiver_npub = pubkey.to_bech32().unwrap_or("".to_owned());
+                            break;
+                        }
+                    }
+
                     let current_unix_timestamp = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .expect("Could not get UNIX timestamp")
                         .as_secs();
-                    let one_week_ago = current_unix_timestamp - 7 * 24 * 60 * 60;
+                    let current_datetime = NaiveDateTime::from_timestamp_micros(current_unix_timestamp as i64 *  1000000).unwrap().to_string();
+                    let one_week_ago_unix_timestamp = current_unix_timestamp - 7 * 24 * 60 * 60;
+                    let one_week_ago_datetime = NaiveDateTime::from_timestamp_micros(one_week_ago_unix_timestamp as i64 * 1000000).unwrap().to_string();
 
-                    info!("Getting counts since UNIX timestamp {}...", one_week_ago);
+                    info!("Getting counts since {}...", one_week_ago_datetime);
                     let counts = match http_client
                         .get(format!(
                             "{}counts?sender={}&since={}",
-                            API_URL, sender_npub, one_week_ago
+                            API_URL, sender_npub, one_week_ago_unix_timestamp
                         ))
                         .send()
                         .await
@@ -137,13 +128,13 @@ async fn main() -> anyhow::Result<()> {
                     };
 
                     let mut message = format!(
-                        "nostr:{} has messaged the following users since {}:\n",
-                        sender_npub, datetime
+                        "Message sent from nostr:{} to nostr:{} at {}. I've seen nostr:{} message the following users since {}:\n",
+                        sender_npub, receiver_npub, current_datetime, sender_npub, one_week_ago_datetime
                     );
                     for (key, value) in counts.iter() {
-                        message = format!("{}\n{} {} time(s)", message, key, value);
-                        info!("{}", message);
+                        message = format!("{}\nnostr:{} {} time(s)", message, key, value);
                     }
+                    info!("{}", message);
                 }
                 Ok(())
             })
